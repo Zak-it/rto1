@@ -1,8 +1,7 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { Alert, AlertCircle, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Agent } from "@/types";
 
 export function useNotSelectedAlert(currentUserAgent: Agent | null) {
