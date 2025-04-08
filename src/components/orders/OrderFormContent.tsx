@@ -1,14 +1,13 @@
-
 import { useEffect, MutableRefObject } from "react";
 import { CardContent } from "@/components/ui/card";
-import { Alert, AlertCircle, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, Clock } from "lucide-react";
 import { QueueDots } from "@/components/agents/QueueDots";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CountdownTimer } from "./CountdownTimer";
 import { useMultiTabGuard } from "@/hooks/useMultiTabGuard";
 import { useAgent } from "@/contexts/AgentContext";
-import { Clock } from "lucide-react";
 import { toast } from "sonner";
 
 interface OrderFormContentProps {
@@ -34,10 +33,8 @@ export function OrderFormContent({
 }: OrderFormContentProps) {
   const { agents, currentAgentId, currentUserAgent, advanceTurn } = useAgent();
   
-  // Configure turn time limit in seconds (2 minutes default)
   const TURN_TIME_LIMIT = 120;
 
-  // Check for multi-tab usage
   const { isDuplicateTab } = useMultiTabGuard({
     agentId: currentUserAgent?.id || null,
     onDetectDuplicate: () => {
@@ -48,16 +45,13 @@ export function OrderFormContent({
     }
   });
 
-  // When turn changes to the current user, focus the input field
   useEffect(() => {
     if (isCurrentUserTurn && !previousTurnState.current) {
       console.log("It's now your turn");
-      // Focus the input field if it's the user's turn
       if (inputRef.current) {
         inputRef.current.focus();
       }
       
-      // Show notification when it's the user's turn
       toast.info("It's your turn now!", {
         description: "You can now submit an order"
       });
@@ -65,7 +59,6 @@ export function OrderFormContent({
     previousTurnState.current = isCurrentUserTurn;
   }, [isCurrentUserTurn, previousTurnState]);
 
-  // Handle countdown timer expiration
   const handleTimeUp = async () => {
     if (isCurrentUserTurn && currentUserAgent) {
       toast.warning("Time is up!", {
@@ -74,7 +67,6 @@ export function OrderFormContent({
       });
       
       try {
-        // Advance to the next agent's turn
         await advanceTurn();
       } catch (error) {
         console.error("Failed to auto-advance turn:", error);
@@ -83,7 +75,6 @@ export function OrderFormContent({
     }
   };
 
-  // Calculate current position for queue visualization
   const activeAgents = agents.filter(agent => agent.active);
   const currentPosition = activeAgents.findIndex(agent => agent.id === currentAgentId);
 
