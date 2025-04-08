@@ -81,11 +81,11 @@ export function CountdownTimer({
       </div>
       <Progress 
         value={progressPercentage} 
-        className="h-2"
-        indicatorClassName={cn(
-          progressPercentage > 50 ? "bg-green-500" : 
-          progressPercentage > 25 ? "bg-amber-500" : 
-          "bg-red-500"
+        className={cn(
+          "h-2",
+          progressPercentage > 50 ? "bg-secondary [&>div]:bg-green-500" : 
+          progressPercentage > 25 ? "bg-secondary [&>div]:bg-amber-500" : 
+          "bg-secondary [&>div]:bg-red-500"
         )}
       />
     </div>
