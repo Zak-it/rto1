@@ -9,20 +9,35 @@ import {
 type TurnNotificationProps = {
   isMyTurn: boolean;
   agentName?: string;
+  turnTimeLimit?: number; // New prop for countdown timer
 };
 
-export const useTurnNotification = ({ isMyTurn, agentName }: TurnNotificationProps) => {
+export const useTurnNotification = ({ 
+  isMyTurn, 
+  agentName,
+  turnTimeLimit = 120 // Default time limit in seconds
+}: TurnNotificationProps) => {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
   );
   const notificationIntervalRef = useRef<number | null>(null);
   const previousTurnRef = useRef(isMyTurn);
+  const originalTitleRef = useRef(document.title);
 
   // Request notification permission
   const requestPermission = async () => {
     const permission = await requestNotificationPermission();
     setNotificationPermission(permission);
     return permission;
+  };
+
+  // Update tab title to indicate it's the agent's turn
+  const updateTabTitle = (isActive: boolean) => {
+    if (isActive) {
+      document.title = `(Your Turn) - Haifa RTO`;
+    } else {
+      document.title = originalTitleRef.current;
+    }
   };
 
   // Send immediate notification and start interval for repeated notifications
@@ -38,6 +53,9 @@ export const useTurnNotification = ({ isMyTurn, agentName }: TurnNotificationPro
     });
     
     playNotificationSound();
+    
+    // Update tab title
+    updateTabTitle(true);
     
     // Set up interval for repeated notifications every 30 seconds
     if (notificationIntervalRef.current) {
@@ -67,10 +85,16 @@ export const useTurnNotification = ({ isMyTurn, agentName }: TurnNotificationPro
       clearInterval(notificationIntervalRef.current);
       notificationIntervalRef.current = null;
     }
+    
+    // Reset tab title
+    updateTabTitle(false);
   };
 
   // Main effect to handle turn changes
   useEffect(() => {
+    // Save original title on mount
+    originalTitleRef.current = document.title;
+    
     // Only proceed if we have notification permission
     if (notificationPermission === 'granted') {
       // If turn has changed to the user's turn, start notifications
@@ -86,6 +110,9 @@ export const useTurnNotification = ({ isMyTurn, agentName }: TurnNotificationPro
     // Update previous turn reference
     previousTurnRef.current = isMyTurn;
     
+    // Always update tab title even if notification permission is not granted
+    updateTabTitle(isMyTurn);
+    
     // Clean up on unmount
     return () => {
       stopTurnNotifications();
@@ -98,6 +125,8 @@ export const useTurnNotification = ({ isMyTurn, agentName }: TurnNotificationPro
       if (notificationIntervalRef.current) {
         clearInterval(notificationIntervalRef.current);
       }
+      // Restore original title
+      document.title = originalTitleRef.current;
     };
   }, []);
 

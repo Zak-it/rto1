@@ -38,7 +38,14 @@ export const createAgentActions = (
         }
         
         // Add the agent to the local state with implicit active status
-        setAgents(prev => [...prev, {...data[0], active: true}]);
+        setAgents(prev => [...prev, {
+          ...data[0], 
+          active: true,
+          status: 'active', // Set initial status
+          average_completion_time: 0,
+          turn_skips: 0,
+          response_delay: 0
+        }]);
         
         toast.success(`Agent ${name} added successfully`);
         return data[0];
@@ -51,9 +58,16 @@ export const createAgentActions = (
 
   const toggleAgentActive = async (agentId: number, active: boolean) => {
     try {
+      // Get current timestamp
+      const timestamp = new Date().toISOString();
+      
       const { error } = await supabase
         .from('agents')
-        .update({ active })
+        .update({ 
+          active,
+          // If deactivating, update status to frozen, otherwise to active
+          status: active ? 'active' : 'frozen'
+        })
         .eq('id', agentId);
         
       if (error) {
@@ -67,7 +81,11 @@ export const createAgentActions = (
       
       setAgents(prev => 
         prev.map(agent => 
-          agent.id === agentId ? { ...agent, active } : agent
+          agent.id === agentId ? { 
+            ...agent, 
+            active, 
+            status: active ? 'active' : 'frozen'
+          } : agent
         )
       );
       
@@ -85,7 +103,7 @@ export const createAgentActions = (
 
   const advanceTurn = async () => {
     try {
-      const activeAgents = agents.filter(agent => agent.active);
+      const activeAgents = agents.filter(agent => agent.active && agent.status !== 'frozen');
       
       if (activeAgents.length === 0) {
         toast.error('No active agents available');
@@ -98,9 +116,15 @@ export const createAgentActions = (
       
       const nextAgentId = activeAgents[nextIndex].id;
       
+      // Update turn start time along with the current agent ID
+      const turnStartTime = new Date().toISOString();
+      
       const { error } = await supabase
         .from('global_state')
-        .update({ current_agent_id: nextAgentId })
+        .update({ 
+          current_agent_id: nextAgentId,
+          turn_start_time: turnStartTime
+        })
         .eq('id', 1);
       
       if (error) {
@@ -119,7 +143,7 @@ export const createAgentActions = (
     }
   };
 
-  const submitOrder = async (orderId: string) => {
+  const submitOrder = async (orderId: string, description?: string) => {
     if (!currentUserAgent) {
       toast.error('You must select an agent first');
       return;
@@ -137,12 +161,35 @@ export const createAgentActions = (
         order_id: orderId // We store this for reference, even though it's not in DB schema
       });
       
+      // Calculate completion time if we have turn start time in global state
+      let completionTime = null;
+      
+      // Fetch the global state to get turn start time
+      const { data: globalStateData, error: globalStateError } = await supabase
+        .from('global_state')
+        .select('turn_start_time')
+        .eq('id', 1)
+        .single();
+      
+      if (!globalStateError && globalStateData && globalStateData.turn_start_time) {
+        const turnStartTime = new Date(globalStateData.turn_start_time).getTime();
+        const submissionTime = new Date().getTime();
+        completionTime = Math.round((submissionTime - turnStartTime) / 1000); // in seconds
+      }
+      
+      // Insert the order with completion time if available
+      const orderData: any = {
+        agent_id: currentUserAgent.id,
+        timestamp: new Date().toISOString()
+      };
+      
+      if (completionTime !== null) {
+        orderData.completion_time = completionTime;
+      }
+      
       const { data, error } = await supabase
         .from('orders')
-        .insert({
-          agent_id: currentUserAgent.id,
-          timestamp: new Date().toISOString()
-        })
+        .insert(orderData)
         .select();
       
       if (error) {
@@ -157,14 +204,50 @@ export const createAgentActions = (
       
       console.log('Order submitted successfully:', data);
       
-      // Update the local agent order count immediately for better UI responsiveness
-      setAgents(prev => 
-        prev.map(agent => 
-          agent.id === currentUserAgent.id 
-            ? { ...agent, order_count: (agent.order_count || 0) + 1 } 
-            : agent
-        )
-      );
+      // Update the agent's performance metrics if completion time is available
+      if (completionTime !== null) {
+        // Get current agent to calculate new average
+        const currentAgent = agents.find(a => a.id === currentUserAgent.id);
+        if (currentAgent) {
+          const currentAvg = currentAgent.average_completion_time || 0;
+          const currentOrders = currentAgent.order_count || 0;
+          
+          // Calculate new average completion time
+          const newAverage = currentOrders > 0
+            ? ((currentAvg * currentOrders) + completionTime) / (currentOrders + 1)
+            : completionTime;
+          
+          // Update agent metrics in database
+          await supabase
+            .from('agents')
+            .update({
+              average_completion_time: newAverage
+            })
+            .eq('id', currentUserAgent.id);
+          
+          // Update local state
+          setAgents(prev => 
+            prev.map(agent => 
+              agent.id === currentUserAgent.id 
+                ? { 
+                    ...agent, 
+                    order_count: (agent.order_count || 0) + 1,
+                    average_completion_time: newAverage
+                  } 
+                : agent
+            )
+          );
+        }
+      } else {
+        // Update the local agent order count immediately for better UI responsiveness
+        setAgents(prev => 
+          prev.map(agent => 
+            agent.id === currentUserAgent.id 
+              ? { ...agent, order_count: (agent.order_count || 0) + 1 } 
+              : agent
+          )
+        );
+      }
       
       // Move to the next agent's turn
       await advanceTurn();

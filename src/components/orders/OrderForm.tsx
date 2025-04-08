@@ -11,9 +11,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { CountdownTimer } from "./CountdownTimer";
+import { useMultiTabGuard } from "@/hooks/useMultiTabGuard";
 
 export function OrderForm() {
-  const { currentUserAgent, isCurrentUserTurn, submitOrder, agents, currentAgentId } = useAgent();
+  const { currentUserAgent, isCurrentUserTurn, submitOrder, agents, currentAgentId, advanceTurn } = useAgent();
   const { refreshOrders } = useOrder();
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,6 +26,22 @@ export function OrderForm() {
   const [isEditing, setIsEditing] = useState(false);
   const previousTurnState = useRef(isCurrentUserTurn);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Configure turn time limit in seconds (2 minutes default)
+  const TURN_TIME_LIMIT = 120;
+  
+  // Check for multi-tab usage
+  const { isDuplicateTab } = useMultiTabGuard({
+    agentId: currentUserAgent?.id || null,
+    onDetectDuplicate: () => {
+      // Disable interaction in this tab
+      setErrorMessage("This agent is already active in another tab. Please use that tab instead.");
+    },
+    onTabClose: () => {
+      // Handle tab close - will be handled by the beforeunload event
+      console.log("Tab closing, agent will be marked as inactive if needed");
+    }
+  });
   
   // Only reset form when user or agent changes, not on every render
   useEffect(() => {
@@ -69,6 +87,10 @@ export function OrderForm() {
         throw new Error("It's not your turn yet. Please wait.");
       }
       
+      if (isDuplicateTab) {
+        throw new Error("This agent is already active in another tab. Please use that tab instead.");
+      }
+      
       if (!orderId.trim()) {
         throw new Error("Please enter an Order ID.");
       }
@@ -86,6 +108,24 @@ export function OrderForm() {
       setErrorMessage(error.message || "Failed to submit order");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+  
+  // Handle countdown timer expiration
+  const handleTimeUp = async () => {
+    if (isCurrentUserTurn && currentUserAgent) {
+      toast.warning("Time is up!", {
+        description: "Your turn has been automatically skipped",
+        duration: 5000
+      });
+      
+      try {
+        // Advance to the next agent's turn
+        await advanceTurn();
+      } catch (error) {
+        console.error("Failed to auto-advance turn:", error);
+        toast.error("Failed to advance turn automatically");
+      }
     }
   };
   
@@ -145,6 +185,15 @@ export function OrderForm() {
             </div>
           )}
           
+          {isCurrentUserTurn && (
+            <CountdownTimer 
+              duration={TURN_TIME_LIMIT}
+              onTimeUp={handleTimeUp}
+              isActive={isCurrentUserTurn && !isDuplicateTab}
+              className="mb-4"
+            />
+          )}
+          
           {!isCurrentUserTurn && (
             <Alert className="mb-4">
               <Clock className="h-4 w-4" />
@@ -163,6 +212,16 @@ export function OrderForm() {
             </Alert>
           )}
           
+          {isDuplicateTab && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Multiple Tabs Detected</AlertTitle>
+              <AlertDescription>
+                This agent is already active in another tab. Please use that tab instead.
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <div className="space-y-4">
             <div>
               <Label htmlFor="orderId">Order ID</Label>
@@ -174,7 +233,7 @@ export function OrderForm() {
                   setOrderId(e.target.value);
                   setIsEditing(true);
                 }}
-                disabled={!isCurrentUserTurn || isSubmitting}
+                disabled={!isCurrentUserTurn || isSubmitting || isDuplicateTab}
                 className="mt-1"
                 ref={inputRef}
               />
@@ -195,7 +254,7 @@ export function OrderForm() {
           </div>
           <Button 
             type="submit" 
-            disabled={!isCurrentUserTurn || isSubmitting || !orderId.trim()}
+            disabled={!isCurrentUserTurn || isSubmitting || !orderId.trim() || isDuplicateTab}
           >
             <SendHorizonal className="mr-2 h-4 w-4" />
             Submit Order

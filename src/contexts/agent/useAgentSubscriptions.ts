@@ -21,6 +21,7 @@ export const useAgentSubscriptions = ({
     let agentsSubscription: any = null;
     let globalStateSubscription: any = null;
     let ordersSubscription: any = null;
+    let notificationsSubscription: any = null;
 
     // Set up subscriptions
     agentsSubscription = supabase
@@ -36,7 +37,11 @@ export const useAgentSubscriptions = ({
           setAgents(prev => [...prev, { 
             ...payload.new as Agent, 
             active: true,
-            order_count: 0 
+            order_count: 0,
+            status: 'active',
+            average_completion_time: 0,
+            turn_skips: 0,
+            response_delay: 0
           }]);
         } else if (payload.eventType === 'UPDATE') {
           setAgents(prev => 
@@ -44,7 +49,9 @@ export const useAgentSubscriptions = ({
               agent.id === payload.new.id ? { 
                 ...agent, 
                 ...payload.new as Agent,
-                active: agent.active 
+                // Preserve client-side only state if not in the db update
+                active: payload.new.active !== undefined ? payload.new.active : agent.active,
+                status: payload.new.status || agent.status || 'active'
               } : agent
             )
           );
@@ -116,6 +123,34 @@ export const useAgentSubscriptions = ({
         console.log('Global state subscription status:', status);
       });
 
+    // Subscribe to a channel for custom notifications
+    notificationsSubscription = supabase
+      .channel('agent-notifications')
+      .on('broadcast', { event: 'notification' }, (payload) => {
+        console.log('Notification received:', payload);
+        
+        // Check if the notification is for this agent
+        if (currentUserAgent && payload.payload && payload.payload.agentId === currentUserAgent.id) {
+          toast.info(payload.payload.title || "Admin Notification", {
+            description: payload.payload.message || "You received a notification",
+            icon: "/lovable-uploads/3425fca3-90da-40b2-97f6-bcabe242d2b2.png",
+            duration: 10000
+          });
+          
+          playNotificationSound();
+          
+          if (Notification.permission === 'granted') {
+            new Notification(payload.payload.title || "Admin Notification", {
+              body: payload.payload.message || "You received a notification",
+              icon: "/lovable-uploads/3425fca3-90da-40b2-97f6-bcabe242d2b2.png"
+            });
+          }
+        }
+      })
+      .subscribe((status) => {
+        console.log('Notifications subscription status:', status);
+      });
+
     return () => {
       // Clean up subscriptions
       if (agentsSubscription) {
@@ -128,6 +163,10 @@ export const useAgentSubscriptions = ({
       
       if (ordersSubscription) {
         supabase.removeChannel(ordersSubscription);
+      }
+      
+      if (notificationsSubscription) {
+        supabase.removeChannel(notificationsSubscription);
       }
     };
   }, [setAgents, setCurrentAgentId, currentUserAgent]);

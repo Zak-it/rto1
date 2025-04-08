@@ -56,10 +56,32 @@ export const useAgentData = ({
         // Process agents and count their orders
         const processedAgents = agentsData.map(agent => {
           const agentOrders = ordersData.filter(order => order.agent_id === agent.id);
+          
+          // Calculate performance metrics
+          let totalCompletionTime = 0;
+          let ordersWithCompletionTime = 0;
+          
+          agentOrders.forEach(order => {
+            if (order.completion_time) {
+              totalCompletionTime += order.completion_time;
+              ordersWithCompletionTime++;
+            }
+          });
+          
+          const averageCompletionTime = ordersWithCompletionTime > 0
+            ? totalCompletionTime / ordersWithCompletionTime
+            : undefined;
+          
           return {
             ...agent,
-            active: true, // Add default active status for all agents
-            order_count: agentOrders.length
+            active: agent.active !== undefined ? agent.active : true, // Default to active if not set
+            order_count: agentOrders.length,
+            // Set default status if not present
+            status: agent.status || 'active',
+            // Add performance metrics
+            average_completion_time: agent.average_completion_time || averageCompletionTime || 0,
+            turn_skips: agent.turn_skips || 0,
+            response_delay: agent.response_delay || 0
           };
         });
         
